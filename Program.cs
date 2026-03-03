@@ -32,10 +32,12 @@ app.UseSwagger();
 app.UseSwaggerUI(c =>
 {
     c.SwaggerEndpoint("/swagger/v1/swagger.json", "Spotify Stats API v1");
-    c.RoutePrefix = string.Empty; // Swagger loads at root URL
+    c.RoutePrefix = "swagger"; // Swagger now lives at /swagger
 });
 
 app.UseCors("AllowAll");
+app.UseDefaultFiles();  // Serves wwwroot/index.html at root
+app.UseStaticFiles();   // Serves all files from wwwroot
 app.UseAuthorization();
 app.MapControllers();
 

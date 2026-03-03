@@ -1,0 +1,959 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Spotify Stats</title>
+  <link href="https://fonts.googleapis.com/css2?family=Playfair+Display:wght@400;700;900&family=DM+Mono:wght@300;400;500&display=swap" rel="stylesheet" />
+  <style>
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+    :root {
+      --bg: #0a0a0f;
+      --surface: #111118;
+      --surface2: #1a1a24;
+      --border: #2a2a38;
+      --accent: #c8f064;
+      --accent2: #f0a830;
+      --text: #f0ede6;
+      --muted: #7a7a90;
+      --danger: #f06464;
+    }
+
+    body {
+      font-family: 'DM Mono', monospace;
+      background: var(--bg);
+      color: var(--text);
+      min-height: 100vh;
+      overflow-x: hidden;
+    }
+
+    /* ── Noise texture overlay ── */
+    body::before {
+      content: '';
+      position: fixed;
+      inset: 0;
+      background-image: url("data:image/svg+xml,%3Csvg viewBox='0 0 256 256' xmlns='http://www.w3.org/2000/svg'%3E%3Cfilter id='noise'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.9' numOctaves='4' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23noise)' opacity='0.04'/%3E%3C/svg%3E");
+      pointer-events: none;
+      z-index: 9999;
+      opacity: 0.4;
+    }
+
+    /* ── Login Screen ── */
+    #login-screen {
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      min-height: 100vh;
+      text-align: center;
+      padding: 2rem;
+      animation: fadeIn 0.8s ease;
+    }
+
+    .vinyl {
+      width: 180px;
+      height: 180px;
+      border-radius: 50%;
+      background: conic-gradient(
+        #1a1a1a 0deg, #2a2a2a 30deg, #1a1a1a 60deg,
+        #2a2a2a 90deg, #1a1a1a 120deg, #2a2a2a 150deg,
+        #1a1a1a 180deg, #2a2a2a 210deg, #1a1a1a 240deg,
+        #2a2a2a 270deg, #1a1a1a 300deg, #2a2a2a 330deg, #1a1a1a 360deg
+      );
+      box-shadow: 0 0 60px rgba(200, 240, 100, 0.15), 0 0 120px rgba(200, 240, 100, 0.05);
+      position: relative;
+      margin-bottom: 2.5rem;
+      animation: spin 8s linear infinite;
+    }
+
+    .vinyl::after {
+      content: '';
+      position: absolute;
+      top: 50%; left: 50%;
+      transform: translate(-50%, -50%);
+      width: 40px; height: 40px;
+      border-radius: 50%;
+      background: radial-gradient(circle, var(--accent) 0%, #8aaa30 100%);
+    }
+
+    @keyframes spin { from { transform: rotate(0deg); } to { transform: rotate(360deg); } }
+
+    #login-screen h1 {
+      font-family: 'Playfair Display', serif;
+      font-size: clamp(2.5rem, 6vw, 4.5rem);
+      font-weight: 900;
+      letter-spacing: -0.02em;
+      line-height: 1;
+      margin-bottom: 1rem;
+    }
+
+    #login-screen h1 span { color: var(--accent); }
+
+    #login-screen p {
+      color: var(--muted);
+      font-size: 0.9rem;
+      max-width: 360px;
+      line-height: 1.7;
+      margin-bottom: 2.5rem;
+    }
+
+    .btn-login {
+      display: inline-flex;
+      align-items: center;
+      gap: 0.75rem;
+      background: var(--accent);
+      color: #0a0a0f;
+      font-family: 'DM Mono', monospace;
+      font-size: 0.85rem;
+      font-weight: 500;
+      padding: 1rem 2rem;
+      border-radius: 100px;
+      border: none;
+      cursor: pointer;
+      text-decoration: none;
+      transition: transform 0.2s, box-shadow 0.2s;
+      letter-spacing: 0.05em;
+    }
+
+    .btn-login:hover {
+      transform: translateY(-2px);
+      box-shadow: 0 8px 32px rgba(200, 240, 100, 0.35);
+    }
+
+    /* ── App Shell ── */
+    #app { display: none; animation: fadeIn 0.6s ease; }
+
+    @keyframes fadeIn { from { opacity: 0; transform: translateY(12px); } to { opacity: 1; transform: translateY(0); } }
+
+    header {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      padding: 1.5rem 2.5rem;
+      border-bottom: 1px solid var(--border);
+      position: sticky;
+      top: 0;
+      background: rgba(10, 10, 15, 0.92);
+      backdrop-filter: blur(12px);
+      z-index: 100;
+    }
+
+    .logo {
+      font-family: 'Playfair Display', serif;
+      font-size: 1.3rem;
+      font-weight: 700;
+      letter-spacing: -0.01em;
+    }
+
+    .logo span { color: var(--accent); }
+
+    #user-info {
+      display: flex;
+      align-items: center;
+      gap: 0.75rem;
+      font-size: 0.8rem;
+      color: var(--muted);
+    }
+
+    #user-avatar {
+      width: 32px; height: 32px;
+      border-radius: 50%;
+      background: var(--surface2);
+      border: 2px solid var(--accent);
+      object-fit: cover;
+    }
+
+    /* ── Nav Tabs ── */
+    nav {
+      display: flex;
+      gap: 0;
+      padding: 0 2.5rem;
+      border-bottom: 1px solid var(--border);
+      overflow-x: auto;
+      scrollbar-width: none;
+    }
+
+    nav::-webkit-scrollbar { display: none; }
+
+    .tab {
+      padding: 1rem 1.5rem;
+      font-family: 'DM Mono', monospace;
+      font-size: 0.8rem;
+      letter-spacing: 0.08em;
+      text-transform: uppercase;
+      color: var(--muted);
+      background: none;
+      border: none;
+      border-bottom: 2px solid transparent;
+      cursor: pointer;
+      transition: color 0.2s, border-color 0.2s;
+      white-space: nowrap;
+    }
+
+    .tab:hover { color: var(--text); }
+    .tab.active { color: var(--accent); border-bottom-color: var(--accent); }
+
+    /* ── Main Content ── */
+    main { padding: 2.5rem; max-width: 1100px; margin: 0 auto; }
+
+    .section { display: none; }
+    .section.active { display: block; animation: fadeIn 0.4s ease; }
+
+    /* ── Controls Bar ── */
+    .controls {
+      display: flex;
+      gap: 1rem;
+      margin-bottom: 2rem;
+      flex-wrap: wrap;
+      align-items: center;
+    }
+
+    .controls label {
+      font-size: 0.75rem;
+      color: var(--muted);
+      letter-spacing: 0.06em;
+      text-transform: uppercase;
+    }
+
+    select {
+      background: var(--surface);
+      color: var(--text);
+      border: 1px solid var(--border);
+      border-radius: 8px;
+      padding: 0.5rem 1rem;
+      font-family: 'DM Mono', monospace;
+      font-size: 0.8rem;
+      cursor: pointer;
+      outline: none;
+      transition: border-color 0.2s;
+    }
+
+    select:focus { border-color: var(--accent); }
+
+    .btn {
+      background: var(--surface2);
+      color: var(--text);
+      border: 1px solid var(--border);
+      border-radius: 8px;
+      padding: 0.5rem 1.25rem;
+      font-family: 'DM Mono', monospace;
+      font-size: 0.8rem;
+      cursor: pointer;
+      transition: background 0.2s, border-color 0.2s;
+    }
+
+    .btn:hover { background: var(--border); border-color: var(--muted); }
+    .btn.primary { background: var(--accent); color: #0a0a0f; border-color: var(--accent); }
+    .btn.primary:hover { box-shadow: 0 4px 16px rgba(200,240,100,0.3); }
+
+    /* ── Section Header ── */
+    .section-header {
+      margin-bottom: 2rem;
+    }
+
+    .section-header h2 {
+      font-family: 'Playfair Display', serif;
+      font-size: 2rem;
+      font-weight: 700;
+      margin-bottom: 0.35rem;
+    }
+
+    .section-header p { color: var(--muted); font-size: 0.8rem; }
+
+    /* ── Stats Bar ── */
+    .stat-bar {
+      display: flex;
+      gap: 1.5rem;
+      margin-bottom: 2rem;
+      flex-wrap: wrap;
+    }
+
+    .stat-pill {
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: 100px;
+      padding: 0.5rem 1.25rem;
+      font-size: 0.78rem;
+      display: flex;
+      align-items: center;
+      gap: 0.5rem;
+    }
+
+    .stat-pill strong { color: var(--accent); }
+
+    /* ── Track List ── */
+    .track-list { display: flex; flex-direction: column; gap: 0.5rem; }
+
+    .track-item {
+      display: grid;
+      grid-template-columns: 2rem 3.5rem 1fr auto;
+      align-items: center;
+      gap: 1rem;
+      padding: 0.75rem 1rem;
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: 10px;
+      transition: background 0.15s, border-color 0.15s;
+      animation: fadeIn 0.4s ease both;
+    }
+
+    .track-item:hover { background: var(--surface2); border-color: var(--muted); }
+
+    .track-num {
+      font-size: 0.75rem;
+      color: var(--muted);
+      text-align: center;
+    }
+
+    .track-art {
+      width: 3.5rem; height: 3.5rem;
+      border-radius: 6px;
+      object-fit: cover;
+      background: var(--surface2);
+    }
+
+    .track-info { min-width: 0; }
+
+    .track-name {
+      font-size: 0.9rem;
+      font-weight: 500;
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      margin-bottom: 0.2rem;
+    }
+
+    .track-meta {
+      font-size: 0.75rem;
+      color: var(--muted);
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
+    }
+
+    .track-right { text-align: right; }
+
+    .popularity-bar {
+      width: 60px;
+      height: 4px;
+      background: var(--border);
+      border-radius: 2px;
+      overflow: hidden;
+      margin-bottom: 0.3rem;
+      margin-left: auto;
+    }
+
+    .popularity-fill {
+      height: 100%;
+      background: var(--accent);
+      border-radius: 2px;
+      transition: width 0.6s ease;
+    }
+
+    .track-duration { font-size: 0.75rem; color: var(--muted); }
+
+    /* ── Artist Grid ── */
+    .artist-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fill, minmax(160px, 1fr));
+      gap: 1rem;
+    }
+
+    .artist-card {
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: 12px;
+      padding: 1.25rem;
+      text-align: center;
+      transition: transform 0.2s, border-color 0.2s;
+      animation: fadeIn 0.4s ease both;
+    }
+
+    .artist-card:hover { transform: translateY(-3px); border-color: var(--muted); }
+
+    .artist-img {
+      width: 80px; height: 80px;
+      border-radius: 50%;
+      object-fit: cover;
+      background: var(--surface2);
+      margin: 0 auto 0.75rem;
+      display: block;
+      border: 2px solid var(--border);
+    }
+
+    .artist-name {
+      font-size: 0.85rem;
+      font-weight: 500;
+      margin-bottom: 0.4rem;
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
+    }
+
+    .artist-genres {
+      font-size: 0.7rem;
+      color: var(--muted);
+      line-height: 1.5;
+      display: -webkit-box;
+      -webkit-line-clamp: 2;
+      -webkit-box-orient: vertical;
+      overflow: hidden;
+    }
+
+    /* ── Genre Tags ── */
+    .genre-tags { display: flex; flex-wrap: wrap; gap: 0.5rem; margin-bottom: 2rem; }
+
+    .genre-tag {
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: 100px;
+      padding: 0.35rem 0.9rem;
+      font-size: 0.75rem;
+      color: var(--text);
+      display: flex;
+      align-items: center;
+      gap: 0.4rem;
+    }
+
+    .genre-tag .count {
+      background: var(--accent);
+      color: #0a0a0f;
+      border-radius: 100px;
+      padding: 0.1rem 0.4rem;
+      font-size: 0.65rem;
+      font-weight: 500;
+    }
+
+    /* ── Playlist List ── */
+    .playlist-list { display: flex; flex-direction: column; gap: 0.5rem; }
+
+    .playlist-item {
+      display: grid;
+      grid-template-columns: 3rem 1fr auto;
+      align-items: center;
+      gap: 1rem;
+      padding: 0.75rem 1rem;
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: 10px;
+      transition: background 0.15s;
+      animation: fadeIn 0.4s ease both;
+    }
+
+    .playlist-item:hover { background: var(--surface2); }
+
+    .playlist-art {
+      width: 3rem; height: 3rem;
+      border-radius: 6px;
+      object-fit: cover;
+      background: var(--surface2);
+    }
+
+    .playlist-name {
+      font-size: 0.88rem;
+      font-weight: 500;
+      margin-bottom: 0.2rem;
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
+    }
+
+    .playlist-desc {
+      font-size: 0.73rem;
+      color: var(--muted);
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
+    }
+
+    .playlist-tracks {
+      font-size: 0.8rem;
+      color: var(--accent);
+      white-space: nowrap;
+      text-align: right;
+    }
+
+    /* ── Mood Section ── */
+    .mood-hero {
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: 16px;
+      padding: 2.5rem;
+      margin-bottom: 2rem;
+      text-align: center;
+      position: relative;
+      overflow: hidden;
+    }
+
+    .mood-hero::before {
+      content: '';
+      position: absolute;
+      inset: 0;
+      background: radial-gradient(ellipse at 50% 0%, rgba(200,240,100,0.08) 0%, transparent 70%);
+      pointer-events: none;
+    }
+
+    .mood-label {
+      font-family: 'Playfair Display', serif;
+      font-size: clamp(2rem, 5vw, 3.5rem);
+      font-weight: 900;
+      color: var(--accent);
+      margin-bottom: 0.75rem;
+    }
+
+    .mood-desc {
+      color: var(--muted);
+      font-size: 0.85rem;
+      max-width: 480px;
+      margin: 0 auto;
+      line-height: 1.7;
+    }
+
+    .mood-stats {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
+      gap: 1rem;
+    }
+
+    .mood-stat {
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: 12px;
+      padding: 1.5rem;
+      text-align: center;
+    }
+
+    .mood-stat-label {
+      font-size: 0.72rem;
+      text-transform: uppercase;
+      letter-spacing: 0.1em;
+      color: var(--muted);
+      margin-bottom: 0.75rem;
+    }
+
+    .mood-stat-value {
+      font-family: 'Playfair Display', serif;
+      font-size: 2rem;
+      font-weight: 700;
+      color: var(--accent2);
+    }
+
+    .mood-stat-bar {
+      width: 100%;
+      height: 6px;
+      background: var(--border);
+      border-radius: 3px;
+      margin-top: 0.75rem;
+      overflow: hidden;
+    }
+
+    .mood-stat-fill {
+      height: 100%;
+      background: linear-gradient(90deg, var(--accent2), var(--accent));
+      border-radius: 3px;
+      transition: width 1s cubic-bezier(0.4, 0, 0.2, 1);
+    }
+
+    /* ── Loading ── */
+    .loading {
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      padding: 4rem;
+      gap: 1rem;
+      color: var(--muted);
+      font-size: 0.8rem;
+    }
+
+    .spinner {
+      width: 32px; height: 32px;
+      border: 2px solid var(--border);
+      border-top-color: var(--accent);
+      border-radius: 50%;
+      animation: spin 0.7s linear infinite;
+    }
+
+    /* ── Error ── */
+    .error-msg {
+      background: rgba(240, 100, 100, 0.1);
+      border: 1px solid rgba(240, 100, 100, 0.3);
+      color: var(--danger);
+      border-radius: 10px;
+      padding: 1rem 1.5rem;
+      font-size: 0.82rem;
+      margin: 1rem 0;
+    }
+
+    /* ── Responsive ── */
+    @media (max-width: 640px) {
+      header { padding: 1rem 1.25rem; }
+      nav { padding: 0 1.25rem; }
+      main { padding: 1.5rem 1.25rem; }
+      .track-item { grid-template-columns: 1.5rem 3rem 1fr auto; gap: 0.75rem; }
+    }
+  </style>
+</head>
+<body>
+
+<!-- ── Login Screen ── -->
+<div id="login-screen">
+  <div class="vinyl"></div>
+  <h1>Your Music,<br /><span>Decoded.</span></h1>
+  <p>Connect your Spotify account to explore your top tracks, artists, playlists, and a mood analysis of your listening habits.</p>
+  <a href="/api/spotify/login" class="btn-login">
+    <svg width="18" height="18" viewBox="0 0 24 24" fill="currentColor"><path d="M12 0C5.4 0 0 5.4 0 12s5.4 12 12 12 12-5.4 12-12S18.66 0 12 0zm5.521 17.34c-.24.359-.66.48-1.021.24-2.82-1.74-6.36-2.101-10.561-1.141-.418.122-.779-.179-.899-.539-.12-.421.18-.78.54-.9 4.56-1.021 8.52-.6 11.64 1.32.42.18.479.659.301 1.02zm1.44-3.3c-.301.42-.841.6-1.262.3-3.239-1.98-8.159-2.58-11.939-1.38-.479.12-1.02-.12-1.14-.6-.12-.48.12-1.021.6-1.141C9.6 9.9 15 10.561 18.72 12.84c.361.181.54.78.241 1.2zm.12-3.36C15.24 8.4 8.82 8.16 5.16 9.301c-.6.179-1.2-.181-1.38-.721-.18-.601.18-1.2.72-1.381 4.26-1.26 11.28-1.02 15.721 1.621.539.3.719 1.02.419 1.56-.299.421-1.02.599-1.559.3z"/></svg>
+    Connect with Spotify
+  </a>
+</div>
+
+<!-- ── Main App ── -->
+<div id="app">
+  <header>
+    <div class="logo">Spotify <span>Stats</span></div>
+    <div id="user-info">
+      <img id="user-avatar" src="" alt="" />
+      <span id="user-name">Loading...</span>
+    </div>
+  </header>
+
+  <nav>
+    <button class="tab active" data-section="tracks">Top Tracks</button>
+    <button class="tab" data-section="artists">Top Artists</button>
+    <button class="tab" data-section="playlists">Playlists</button>
+    <button class="tab" data-section="mood">Mood Analysis</button>
+  </nav>
+
+  <main>
+
+    <!-- ── Top Tracks ── -->
+    <section id="section-tracks" class="section active">
+      <div class="section-header">
+        <h2>Top Tracks</h2>
+        <p>Your most played songs, ranked.</p>
+      </div>
+      <div class="controls">
+        <label>Time Range</label>
+        <select id="tracks-range">
+          <option value="short_term">Last 4 Weeks</option>
+          <option value="medium_term" selected>Last 6 Months</option>
+          <option value="long_term">All Time</option>
+        </select>
+        <label>Show</label>
+        <select id="tracks-limit">
+          <option value="10">Top 10</option>
+          <option value="20" selected>Top 20</option>
+          <option value="50">Top 50</option>
+        </select>
+        <button class="btn primary" onclick="loadTracks()">Refresh</button>
+      </div>
+      <div id="tracks-stat-bar" class="stat-bar"></div>
+      <div id="tracks-content" class="track-list"></div>
+    </section>
+
+    <!-- ── Top Artists ── -->
+    <section id="section-artists" class="section">
+      <div class="section-header">
+        <h2>Top Artists</h2>
+        <p>The artists you keep coming back to.</p>
+      </div>
+      <div class="controls">
+        <label>Time Range</label>
+        <select id="artists-range">
+          <option value="short_term">Last 4 Weeks</option>
+          <option value="medium_term" selected>Last 6 Months</option>
+          <option value="long_term">All Time</option>
+        </select>
+        <label>Show</label>
+        <select id="artists-limit">
+          <option value="10">Top 10</option>
+          <option value="20" selected>Top 20</option>
+          <option value="50">Top 50</option>
+        </select>
+        <button class="btn primary" onclick="loadArtists()">Refresh</button>
+      </div>
+      <div id="artists-genres" class="genre-tags"></div>
+      <div id="artists-content" class="artist-grid"></div>
+    </section>
+
+    <!-- ── Playlists ── -->
+    <section id="section-playlists" class="section">
+      <div class="section-header">
+        <h2>Your Playlists</h2>
+        <p>Every playlist in your library.</p>
+      </div>
+      <div class="controls">
+        <label>Sort By</label>
+        <select id="playlists-sort">
+          <option value="">Default</option>
+          <option value="name">Name (A–Z)</option>
+          <option value="size">Size (Largest First)</option>
+        </select>
+        <button class="btn primary" onclick="loadPlaylists()">Refresh</button>
+      </div>
+      <div id="playlists-stat-bar" class="stat-bar"></div>
+      <div id="playlists-content" class="playlist-list"></div>
+    </section>
+
+    <!-- ── Mood ── -->
+    <section id="section-mood" class="section">
+      <div class="section-header">
+        <h2>Mood Analysis</h2>
+        <p>What your listening habits say about you.</p>
+      </div>
+      <div class="controls">
+        <label>Time Range</label>
+        <select id="mood-range">
+          <option value="short_term">Last 4 Weeks</option>
+          <option value="medium_term" selected>Last 6 Months</option>
+          <option value="long_term">All Time</option>
+        </select>
+        <button class="btn primary" onclick="loadMood()">Analyze</button>
+      </div>
+      <div id="mood-content"></div>
+    </section>
+
+  </main>
+</div>
+
+<script>
+  const API = 'http://127.0.0.1:5000/api/spotify';
+
+  // ── Check auth on load ──
+  window.addEventListener('DOMContentLoaded', async () => {
+    const params = new URLSearchParams(window.location.search);
+    if (params.get('authenticated') === 'true') {
+      window.history.replaceState({}, '', '/');
+    }
+    await checkAuth();
+  });
+
+  async function checkAuth() {
+    try {
+      const res = await fetch(`${API}/me`);
+      if (res.status === 401) {
+        showLogin();
+        return;
+      }
+      const user = await res.json();
+      showApp(user);
+    } catch {
+      showLogin();
+    }
+  }
+
+  function showLogin() {
+    document.getElementById('login-screen').style.display = 'flex';
+    document.getElementById('app').style.display = 'none';
+  }
+
+  function showApp(user) {
+    document.getElementById('login-screen').style.display = 'none';
+    document.getElementById('app').style.display = 'block';
+
+    document.getElementById('user-name').textContent = user.displayName || user.id || 'Listener';
+    const avatar = document.getElementById('user-avatar');
+    if (user.images && user.images.length > 0) {
+      avatar.src = user.images[0].url;
+    } else {
+      avatar.style.display = 'none';
+    }
+
+    loadTracks();
+  }
+
+  // ── Tab navigation ──
+  document.querySelectorAll('.tab').forEach(tab => {
+    tab.addEventListener('click', () => {
+      document.querySelectorAll('.tab').forEach(t => t.classList.remove('active'));
+      document.querySelectorAll('.section').forEach(s => s.classList.remove('active'));
+      tab.classList.add('active');
+      const section = document.getElementById('section-' + tab.dataset.section);
+      section.classList.add('active');
+
+      // Lazy-load section data
+      const s = tab.dataset.section;
+      if (s === 'artists' && !document.getElementById('artists-content').children.length) loadArtists();
+      if (s === 'playlists' && !document.getElementById('playlists-content').children.length) loadPlaylists();
+      if (s === 'mood' && !document.getElementById('mood-content').children.length) loadMood();
+    });
+  });
+
+  // ── Loading / Error helpers ──
+  function showLoading(id) {
+    document.getElementById(id).innerHTML = `<div class="loading"><div class="spinner"></div><span>Loading...</span></div>`;
+  }
+
+  function showError(id, msg) {
+    document.getElementById(id).innerHTML = `<div class="error-msg">⚠ ${msg}</div>`;
+  }
+
+  // ── Top Tracks ──
+  async function loadTracks() {
+    const range = document.getElementById('tracks-range').value;
+    const limit = document.getElementById('tracks-limit').value;
+    showLoading('tracks-content');
+    document.getElementById('tracks-stat-bar').innerHTML = '';
+
+    try {
+      const res = await fetch(`${API}/top-tracks?timeRange=${range}&limit=${limit}`);
+      if (!res.ok) throw new Error('Failed to fetch tracks');
+      const data = await res.json();
+
+      document.getElementById('tracks-stat-bar').innerHTML = `
+        <div class="stat-pill"><strong>${data.count}</strong> tracks</div>
+        <div class="stat-pill">Avg popularity <strong>${data.averagePopularity}</strong>/100</div>
+      `;
+
+      if (!data.tracks.length) {
+        document.getElementById('tracks-content').innerHTML = '<div class="loading">No tracks found for this time range.</div>';
+        return;
+      }
+
+      document.getElementById('tracks-content').innerHTML = data.tracks.map((t, i) => `
+        <div class="track-item" style="animation-delay:${i * 0.03}s">
+          <div class="track-num">${i + 1}</div>
+          <img class="track-art" src="${t.albumArtUrl || ''}" alt="${t.album}" onerror="this.style.background='var(--surface2)';this.src=''" />
+          <div class="track-info">
+            <div class="track-name">${escHtml(t.name)}</div>
+            <div class="track-meta">${escHtml(t.artist)} · ${escHtml(t.album)}</div>
+          </div>
+          <div class="track-right">
+            <div class="popularity-bar"><div class="popularity-fill" style="width:${t.popularity}%"></div></div>
+            <div class="track-duration">${t.durationFormatted}</div>
+          </div>
+        </div>
+      `).join('');
+    } catch (e) {
+      showError('tracks-content', 'Could not load tracks. Make sure you are logged in.');
+    }
+  }
+
+  // ── Top Artists ──
+  async function loadArtists() {
+    const range = document.getElementById('artists-range').value;
+    const limit = document.getElementById('artists-limit').value;
+    showLoading('artists-content');
+    document.getElementById('artists-genres').innerHTML = '';
+
+    try {
+      const res = await fetch(`${API}/top-artists?timeRange=${range}&limit=${limit}`);
+      if (!res.ok) throw new Error();
+      const data = await res.json();
+
+      if (data.topGenres && data.topGenres.length) {
+        document.getElementById('artists-genres').innerHTML =
+          data.topGenres.map(g => `
+            <div class="genre-tag">${escHtml(g.genre)}<span class="count">${g.count}</span></div>
+          `).join('');
+      }
+
+      if (!data.artists.length) {
+        document.getElementById('artists-content').innerHTML = '<div class="loading">No artists found for this time range.</div>';
+        return;
+      }
+
+      document.getElementById('artists-content').innerHTML = data.artists.map((a, i) => `
+        <div class="artist-card" style="animation-delay:${i * 0.04}s">
+          <img class="artist-img" src="${a.imageUrl || ''}" alt="${a.name}" onerror="this.style.background='var(--surface2)';this.src=''" />
+          <div class="artist-name">${escHtml(a.name)}</div>
+          <div class="artist-genres">${a.genres.slice(0, 2).map(escHtml).join(', ') || 'No genres listed'}</div>
+        </div>
+      `).join('');
+    } catch {
+      showError('artists-content', 'Could not load artists.');
+    }
+  }
+
+  // ── Playlists ──
+  async function loadPlaylists() {
+    const sort = document.getElementById('playlists-sort').value;
+    showLoading('playlists-content');
+    document.getElementById('playlists-stat-bar').innerHTML = '';
+
+    try {
+      const res = await fetch(`${API}/playlists${sort ? '?sortBy=' + sort : ''}`);
+      if (!res.ok) throw new Error();
+      const data = await res.json();
+
+      document.getElementById('playlists-stat-bar').innerHTML = `
+        <div class="stat-pill"><strong>${data.count}</strong> playlists</div>
+        <div class="stat-pill"><strong>${data.totalTracks}</strong> total tracks</div>
+      `;
+
+      if (!data.playlists.length) {
+        document.getElementById('playlists-content').innerHTML = '<div class="loading">No playlists found.</div>';
+        return;
+      }
+
+      document.getElementById('playlists-content').innerHTML = data.playlists.map((p, i) => `
+        <div class="playlist-item" style="animation-delay:${i * 0.03}s">
+          <img class="playlist-art" src="${p.imageUrl || ''}" alt="${p.name}" onerror="this.style.background='var(--surface2)';this.src=''" />
+          <div>
+            <div class="playlist-name">${escHtml(p.name)}</div>
+            <div class="playlist-desc">${p.description ? escHtml(p.description) : (p.isPublic ? 'Public playlist' : 'Private playlist')}</div>
+          </div>
+          <div class="playlist-tracks">${p.trackCount} tracks</div>
+        </div>
+      `).join('');
+    } catch {
+      showError('playlists-content', 'Could not load playlists.');
+    }
+  }
+
+  // ── Mood ──
+  async function loadMood() {
+    const range = document.getElementById('mood-range').value;
+    document.getElementById('mood-content').innerHTML = `<div class="loading"><div class="spinner"></div><span>Analyzing your listening...</span></div>`;
+
+    try {
+      const res = await fetch(`${API}/mood?timeRange=${range}`);
+      if (!res.ok) throw new Error();
+      const d = await res.json();
+
+      document.getElementById('mood-content').innerHTML = `
+        <div class="mood-hero">
+          <div class="mood-label">${escHtml(d.overallMood)}</div>
+          <div class="mood-desc">${escHtml(d.moodDescription)}</div>
+        </div>
+        <div class="mood-stats">
+          <div class="mood-stat">
+            <div class="mood-stat-label">Energy</div>
+            <div class="mood-stat-value">${Math.round(d.averageEnergy * 100)}<small style="font-size:1rem;color:var(--muted)">%</small></div>
+            <div class="mood-stat-bar"><div class="mood-stat-fill" style="width:${d.averageEnergy * 100}%"></div></div>
+          </div>
+          <div class="mood-stat">
+            <div class="mood-stat-label">Positivity</div>
+            <div class="mood-stat-value">${Math.round(d.averageValence * 100)}<small style="font-size:1rem;color:var(--muted)">%</small></div>
+            <div class="mood-stat-bar"><div class="mood-stat-fill" style="width:${d.averageValence * 100}%"></div></div>
+          </div>
+          <div class="mood-stat">
+            <div class="mood-stat-label">Danceability</div>
+            <div class="mood-stat-value">${Math.round(d.averageDanceability * 100)}<small style="font-size:1rem;color:var(--muted)">%</small></div>
+            <div class="mood-stat-bar"><div class="mood-stat-fill" style="width:${d.averageDanceability * 100}%"></div></div>
+          </div>
+          <div class="mood-stat">
+            <div class="mood-stat-label">Avg Tempo</div>
+            <div class="mood-stat-value">${Math.round(d.averageTempo)}<small style="font-size:1rem;color:var(--muted)"> BPM</small></div>
+            <div class="mood-stat-bar"><div class="mood-stat-fill" style="width:${Math.min(d.averageTempo / 200 * 100, 100)}%"></div></div>
+          </div>
+          <div class="mood-stat">
+            <div class="mood-stat-label">Avg Popularity</div>
+            <div class="mood-stat-value">${Math.round(d.averagePopularity)}<small style="font-size:1rem;color:var(--muted)">/100</small></div>
+            <div class="mood-stat-bar"><div class="mood-stat-fill" style="width:${d.averagePopularity}%"></div></div>
+          </div>
+        </div>
+      `;
+    } catch {
+      showError('mood-content', 'Could not analyze mood. Make sure you have listening history.');
+    }
+  }
+
+  function escHtml(str) {
+    if (!str) return '';
+    return String(str).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
+  }
+</script>
+</body>
+</html>

@@ -39,11 +39,7 @@ namespace SpotifyAPI.Controllers
             if (!success)
                 return StatusCode(500, new { message = "Failed to exchange code for token." });
 
-            return Ok(new
-            {
-                message = "Authentication successful! You can now use the other endpoints.",
-                tip = "Try GET /api/spotify/me to see your profile."
-            });
+            return Redirect("/?authenticated=true");
         }
 
         // ─── User Endpoints ────────────────────────────────────────────────────
