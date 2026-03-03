@@ -510,10 +510,23 @@
       line-height: 1.7;
     }
 
+    .mood-meta {
+      display: flex;
+      justify-content: center;
+      gap: 1.5rem;
+      margin-top: 1.25rem;
+      flex-wrap: wrap;
+    }
+
+    .mood-meta .stat-pill {
+      background: var(--surface2);
+    }
+
     .mood-stats {
       display: grid;
       grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
       gap: 1rem;
+      margin-bottom: 2rem;
     }
 
     .mood-stat {
@@ -700,7 +713,7 @@
     <section id="section-mood" class="section">
       <div class="section-header">
         <h2>Mood Analysis</h2>
-        <p>What your listening habits say about you.</p>
+        <p>What your listening habits say about you, based on your top genres.</p>
       </div>
       <div class="controls">
         <label>Time Range</label>
@@ -718,7 +731,7 @@
 </div>
 
 <script>
-  const API = 'http://127.0.0.1:5000/api/spotify';
+  const API = '/api/spotify';
 
   // ── Check auth on load ──
   window.addEventListener('DOMContentLoaded', async () => {
@@ -786,7 +799,7 @@
   }
 
   function showError(id, msg) {
-    document.getElementById(id).innerHTML = `<div class="error-msg">⚠ ${msg}</div>`;
+    document.getElementById(id).innerHTML = `<div class="error-msg">${escHtml(msg)}</div>`;
   }
 
   // ── Top Tracks ──
@@ -814,7 +827,7 @@
       document.getElementById('tracks-content').innerHTML = data.tracks.map((t, i) => `
         <div class="track-item" style="animation-delay:${i * 0.03}s">
           <div class="track-num">${i + 1}</div>
-          <img class="track-art" src="${t.albumArtUrl || ''}" alt="${t.album}" onerror="this.style.background='var(--surface2)';this.src=''" />
+          <img class="track-art" src="${t.albumArtUrl || ''}" alt="${escHtml(t.album)}" onerror="this.style.background='var(--surface2)';this.removeAttribute('src')" />
           <div class="track-info">
             <div class="track-name">${escHtml(t.name)}</div>
             <div class="track-meta">${escHtml(t.artist)} · ${escHtml(t.album)}</div>
@@ -856,9 +869,9 @@
 
       document.getElementById('artists-content').innerHTML = data.artists.map((a, i) => `
         <div class="artist-card" style="animation-delay:${i * 0.04}s">
-          <img class="artist-img" src="${a.imageUrl || ''}" alt="${a.name}" onerror="this.style.background='var(--surface2)';this.src=''" />
+          <img class="artist-img" src="${a.imageUrl || ''}" alt="${escHtml(a.name)}" onerror="this.style.background='var(--surface2)';this.removeAttribute('src')" />
           <div class="artist-name">${escHtml(a.name)}</div>
-          <div class="artist-genres">${a.genres.slice(0, 2).map(escHtml).join(', ') || 'No genres listed'}</div>
+          <div class="artist-genres">${(a.genres || []).slice(0, 2).map(escHtml).join(', ') || 'No genres listed'}</div>
         </div>
       `).join('');
     } catch {
@@ -882,19 +895,19 @@
         <div class="stat-pill"><strong>${data.totalTracks}</strong> total tracks</div>
       `;
 
-      if (!data.playlists.length) {
+      if (!data.playlists || !data.playlists.length) {
         document.getElementById('playlists-content').innerHTML = '<div class="loading">No playlists found.</div>';
         return;
       }
 
       document.getElementById('playlists-content').innerHTML = data.playlists.map((p, i) => `
         <div class="playlist-item" style="animation-delay:${i * 0.03}s">
-          <img class="playlist-art" src="${p.imageUrl || ''}" alt="${p.name}" onerror="this.style.background='var(--surface2)';this.src=''" />
+          <img class="playlist-art" src="${p.imageUrl || ''}" alt="${escHtml(p.name)}" onerror="this.style.background='var(--surface2)';this.removeAttribute('src')" />
           <div>
             <div class="playlist-name">${escHtml(p.name)}</div>
             <div class="playlist-desc">${p.description ? escHtml(p.description) : (p.isPublic ? 'Public playlist' : 'Private playlist')}</div>
           </div>
-          <div class="playlist-tracks">${p.trackCount} tracks</div>
+          <div class="playlist-tracks">${p.trackCount || 0} tracks</div>
         </div>
       `).join('');
     } catch {
@@ -912,38 +925,36 @@
       if (!res.ok) throw new Error();
       const d = await res.json();
 
+      // Build genre tags
+      const genreHtml = (d.topGenres && d.topGenres.length)
+        ? `<div style="margin-top:2rem">
+            <div style="font-size:0.75rem;text-transform:uppercase;letter-spacing:0.1em;color:var(--muted);margin-bottom:0.75rem">Your Top Genres</div>
+            <div class="genre-tags">${d.topGenres.map(g =>
+              `<div class="genre-tag">${escHtml(g.genre)}<span class="count">${g.count}</span></div>`
+            ).join('')}</div>
+           </div>`
+        : '';
+
       document.getElementById('mood-content').innerHTML = `
         <div class="mood-hero">
           <div class="mood-label">${escHtml(d.overallMood)}</div>
           <div class="mood-desc">${escHtml(d.moodDescription)}</div>
+          <div class="mood-meta">
+            <div class="stat-pill"><strong>${d.tracksAnalyzed}</strong> tracks analyzed</div>
+            <div class="stat-pill"><strong>${d.artistsAnalyzed}</strong> artists analyzed</div>
+            <div class="stat-pill">Avg popularity <strong>${Math.round(d.averagePopularity)}</strong>/100</div>
+          </div>
         </div>
         <div class="mood-stats">
-          <div class="mood-stat">
-            <div class="mood-stat-label">Energy</div>
-            <div class="mood-stat-value">${Math.round(d.averageEnergy * 100)}<small style="font-size:1rem;color:var(--muted)">%</small></div>
-            <div class="mood-stat-bar"><div class="mood-stat-fill" style="width:${d.averageEnergy * 100}%"></div></div>
-          </div>
-          <div class="mood-stat">
-            <div class="mood-stat-label">Positivity</div>
-            <div class="mood-stat-value">${Math.round(d.averageValence * 100)}<small style="font-size:1rem;color:var(--muted)">%</small></div>
-            <div class="mood-stat-bar"><div class="mood-stat-fill" style="width:${d.averageValence * 100}%"></div></div>
-          </div>
-          <div class="mood-stat">
-            <div class="mood-stat-label">Danceability</div>
-            <div class="mood-stat-value">${Math.round(d.averageDanceability * 100)}<small style="font-size:1rem;color:var(--muted)">%</small></div>
-            <div class="mood-stat-bar"><div class="mood-stat-fill" style="width:${d.averageDanceability * 100}%"></div></div>
-          </div>
-          <div class="mood-stat">
-            <div class="mood-stat-label">Avg Tempo</div>
-            <div class="mood-stat-value">${Math.round(d.averageTempo)}<small style="font-size:1rem;color:var(--muted)"> BPM</small></div>
-            <div class="mood-stat-bar"><div class="mood-stat-fill" style="width:${Math.min(d.averageTempo / 200 * 100, 100)}%"></div></div>
-          </div>
-          <div class="mood-stat">
-            <div class="mood-stat-label">Avg Popularity</div>
-            <div class="mood-stat-value">${Math.round(d.averagePopularity)}<small style="font-size:1rem;color:var(--muted)">/100</small></div>
-            <div class="mood-stat-bar"><div class="mood-stat-fill" style="width:${d.averagePopularity}%"></div></div>
-          </div>
+          ${(d.moodScores || []).map(s => `
+            <div class="mood-stat">
+              <div class="mood-stat-label">${escHtml(s.category)}</div>
+              <div class="mood-stat-value">${Math.round(s.score)}<small style="font-size:1rem;color:var(--muted)">%</small></div>
+              <div class="mood-stat-bar"><div class="mood-stat-fill" style="width:${s.score}%"></div></div>
+            </div>
+          `).join('')}
         </div>
+        ${genreHtml}
       `;
     } catch {
       showError('mood-content', 'Could not analyze mood. Make sure you have listening history.');

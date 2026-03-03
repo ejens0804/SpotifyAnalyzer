@@ -79,33 +79,15 @@ namespace SpotifyAPI.Models
     {
         public string Id { get; set; } = "";
         public string Name { get; set; } = "";
-        public string Description { get; set; } = "";
-        public SpotifyPlaylistTracks Tracks { get; set; } = new();
-        public List<SpotifyImage> Images { get; set; } = new();
+        public string? Description { get; set; }
+        public SpotifyPlaylistTracks? Tracks { get; set; }
+        public List<SpotifyImage>? Images { get; set; }
         public bool Public { get; set; }
     }
 
     public class SpotifyPlaylistTracks
     {
         public int Total { get; set; }
-    }
-
-    // --- Audio Features ---
-    public class SpotifyAudioFeaturesResponse
-    {
-        public List<SpotifyAudioFeatures> AudioFeatures { get; set; } = new();
-    }
-
-    public class SpotifyAudioFeatures
-    {
-        public string Id { get; set; } = "";
-        public float Energy { get; set; }
-        public float Valence { get; set; }
-        public float Danceability { get; set; }
-        public float Tempo { get; set; }
-        public float Acousticness { get; set; }
-        public float Instrumentalness { get; set; }
-        public float Speechiness { get; set; }
     }
 
     // --- Processed/Summary Models ---
@@ -137,14 +119,27 @@ namespace SpotifyAPI.Models
         public string ImageUrl { get; set; } = "";
     }
 
+    // --- Genre-Based Mood Analysis (replaces deprecated Audio Features) ---
     public class MoodSummary
     {
         public string OverallMood { get; set; } = "";
-        public double AverageEnergy { get; set; }
-        public double AverageValence { get; set; }
-        public double AverageDanceability { get; set; }
-        public double AverageTempo { get; set; }
-        public double AveragePopularity { get; set; }
         public string MoodDescription { get; set; } = "";
+        public double AveragePopularity { get; set; }
+        public int TracksAnalyzed { get; set; }
+        public int ArtistsAnalyzed { get; set; }
+        public List<MoodScore> MoodScores { get; set; } = new();
+        public List<GenreCount> TopGenres { get; set; } = new();
+    }
+
+    public class MoodScore
+    {
+        public string Category { get; set; } = "";
+        public double Score { get; set; }
+    }
+
+    public class GenreCount
+    {
+        public string Genre { get; set; } = "";
+        public int Count { get; set; }
     }
 }

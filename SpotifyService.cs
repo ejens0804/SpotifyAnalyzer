@@ -23,6 +23,38 @@ namespace SpotifyAPI.Services
             DefaultIgnoreCondition = JsonIgnoreCondition.WhenWritingNull
         };
 
+        // ─── Genre-to-Mood keyword mappings ────────────────────────────────────
+        private static readonly HashSet<string> EnergeticKeywords = new(StringComparer.OrdinalIgnoreCase)
+        {
+            "rock", "metal", "punk", "hardcore", "hard rock", "heavy metal",
+            "thrash", "grunge", "electronic", "edm", "dance", "techno",
+            "house", "drum and bass", "dubstep", "trance", "hardstyle",
+            "industrial", "garage", "breakbeat", "rave"
+        };
+
+        private static readonly HashSet<string> HappyKeywords = new(StringComparer.OrdinalIgnoreCase)
+        {
+            "pop", "funk", "disco", "reggae", "ska", "tropical",
+            "latin", "k-pop", "j-pop", "afrobeat", "soca", "dancehall",
+            "reggaeton", "salsa", "cumbia", "sunshine", "bubblegum",
+            "happy", "party", "celebration"
+        };
+
+        private static readonly HashSet<string> CalmKeywords = new(StringComparer.OrdinalIgnoreCase)
+        {
+            "ambient", "chill", "acoustic", "folk", "classical",
+            "jazz", "bossa nova", "lo-fi", "lofi", "new age", "meditation",
+            "spa", "sleep", "piano", "chamber", "baroque", "choral",
+            "easy listening", "smooth jazz", "soft rock"
+        };
+
+        private static readonly HashSet<string> SadKeywords = new(StringComparer.OrdinalIgnoreCase)
+        {
+            "emo", "gothic", "blues", "singer-songwriter", "sad",
+            "melancholy", "dark", "doom", "shoegaze", "post-punk",
+            "slowcore", "darkwave", "funeral", "depressive"
+        };
+
         public SpotifyService(IConfiguration config, IHttpClientFactory httpClientFactory)
         {
             _config = config;
@@ -169,8 +201,8 @@ namespace SpotifyAPI.Services
             {
                 Name = a.Name,
                 Popularity = a.Popularity,
-                Genres = a.Genres,
-                ImageUrl = a.Images.FirstOrDefault()?.Url ?? ""
+                Genres = a.Genres ?? new(),
+                ImageUrl = a.Images?.FirstOrDefault()?.Url ?? ""
             }).ToList();
         }
 
@@ -186,11 +218,11 @@ namespace SpotifyAPI.Services
 
             var summaries = data.Items.Select(p => new PlaylistSummary
             {
-                Name = p.Name,
-                Description = p.Description,
-                TrackCount = p.Tracks.Total,
+                Name = p.Name ?? "",
+                Description = p.Description ?? "",
+                TrackCount = p.Tracks?.Total ?? 0,
                 IsPublic = p.Public,
-                ImageUrl = p.Images.FirstOrDefault()?.Url ?? ""
+                ImageUrl = p.Images?.FirstOrDefault()?.Url ?? ""
             }).ToList();
 
             // Filter/Sort based on query param
@@ -202,10 +234,16 @@ namespace SpotifyAPI.Services
             };
         }
 
+        // ─── Genre-Based Mood Analysis ─────────────────────────────────────────
+        // The Spotify Audio Features API was deprecated in November 2024.
+        // This approach analyzes mood from your top artists' genres and track
+        // popularity instead.
+
         public async Task<MoodSummary?> GetMoodSummaryAsync(string timeRange = "medium_term")
         {
-            // Step 1: Get top tracks to retrieve IDs
             var client = await GetAuthenticatedClientAsync();
+
+            // Step 1: Get top tracks for popularity data
             var tracksResponse = await client.GetAsync(
                 $"https://api.spotify.com/v1/me/top/tracks?time_range={timeRange}&limit=50"
             );
@@ -215,38 +253,75 @@ namespace SpotifyAPI.Services
             var tracksData = JsonSerializer.Deserialize<SpotifyTopTracksResponse>(tracksJson, _jsonOptions);
             if (tracksData == null || tracksData.Items.Count == 0) return null;
 
-            var trackIds = string.Join(",", tracksData.Items.Select(t => t.Id).Take(50));
+            // Step 2: Get top artists for genre data
+            var artistsResponse = await client.GetAsync(
+                $"https://api.spotify.com/v1/me/top/artists?time_range={timeRange}&limit=50"
+            );
+            if (!artistsResponse.IsSuccessStatusCode) return null;
+
+            var artistsJson = await artistsResponse.Content.ReadAsStringAsync();
+            var artistsData = JsonSerializer.Deserialize<SpotifyTopArtistsResponse>(artistsJson, _jsonOptions);
+            if (artistsData == null || artistsData.Items.Count == 0) return null;
+
             var avgPopularity = tracksData.Items.Average(t => t.Popularity);
 
-            // Step 2: Get audio features for those tracks
-            var featuresResponse = await client.GetAsync(
-                $"https://api.spotify.com/v1/audio-features?ids={trackIds}"
-            );
-            if (!featuresResponse.IsSuccessStatusCode) return null;
+            // Step 3: Collect all genres from top artists
+            var allGenres = artistsData.Items
+                .SelectMany(a => a.Genres ?? new List<string>())
+                .Where(g => !string.IsNullOrWhiteSpace(g))
+                .Select(g => g.ToLower().Trim())
+                .ToList();
 
-            var featuresJson = await featuresResponse.Content.ReadAsStringAsync();
-            var featuresData = JsonSerializer.Deserialize<SpotifyAudioFeaturesResponse>(featuresJson, _jsonOptions);
-            if (featuresData?.AudioFeatures == null || featuresData.AudioFeatures.Count == 0) return null;
+            if (allGenres.Count == 0) return null;
 
-            var features = featuresData.AudioFeatures;
-            var avgEnergy = features.Average(f => f.Energy);
-            var avgValence = features.Average(f => f.Valence);
-            var avgDance = features.Average(f => f.Danceability);
-            var avgTempo = features.Average(f => f.Tempo);
+            // Step 4: Score each mood category by matching genre keywords
+            double energeticScore = CalculateGenreScore(allGenres, EnergeticKeywords);
+            double happyScore = CalculateGenreScore(allGenres, HappyKeywords);
+            double calmScore = CalculateGenreScore(allGenres, CalmKeywords);
+            double sadScore = CalculateGenreScore(allGenres, SadKeywords);
 
-            // Step 3: Determine mood label
-            string mood = DetermineMood(avgEnergy, avgValence);
-            string description = GenerateMoodDescription(avgEnergy, avgValence, avgDance, avgTempo);
+            // Normalize scores to percentages
+            double total = energeticScore + happyScore + calmScore + sadScore;
+            if (total > 0)
+            {
+                energeticScore = energeticScore / total * 100;
+                happyScore = happyScore / total * 100;
+                calmScore = calmScore / total * 100;
+                sadScore = sadScore / total * 100;
+            }
+            else
+            {
+                // No genre matches — distribute evenly
+                energeticScore = happyScore = calmScore = sadScore = 25;
+            }
+
+            // Step 5: Get top genres for display
+            var topGenres = allGenres
+                .GroupBy(g => g)
+                .OrderByDescending(g => g.Count())
+                .Take(8)
+                .Select(g => new GenreCount { Genre = g.Key, Count = g.Count() })
+                .ToList();
+
+            // Step 6: Determine overall mood
+            string overallMood = DetermineMood(energeticScore, happyScore, calmScore, sadScore);
+            string description = GenerateMoodDescription(energeticScore, happyScore, calmScore, sadScore, avgPopularity);
 
             return new MoodSummary
             {
-                OverallMood = mood,
-                AverageEnergy = Math.Round(avgEnergy, 2),
-                AverageValence = Math.Round(avgValence, 2),
-                AverageDanceability = Math.Round(avgDance, 2),
-                AverageTempo = Math.Round(avgTempo, 1),
+                OverallMood = overallMood,
+                MoodDescription = description,
                 AveragePopularity = Math.Round(avgPopularity, 1),
-                MoodDescription = description
+                TracksAnalyzed = tracksData.Items.Count,
+                ArtistsAnalyzed = artistsData.Items.Count,
+                MoodScores = new List<MoodScore>
+                {
+                    new() { Category = "Energetic", Score = Math.Round(energeticScore, 1) },
+                    new() { Category = "Happy", Score = Math.Round(happyScore, 1) },
+                    new() { Category = "Calm", Score = Math.Round(calmScore, 1) },
+                    new() { Category = "Melancholic", Score = Math.Round(sadScore, 1) }
+                },
+                TopGenres = topGenres
             };
         }
 
@@ -258,34 +333,77 @@ namespace SpotifyAPI.Services
             return $"{(int)ts.TotalMinutes}:{ts.Seconds:D2}";
         }
 
-        private static string DetermineMood(double energy, double valence)
+        /// <summary>
+        /// Scores how many of a user's genres match a mood keyword set.
+        /// Uses partial matching so "indie rock" matches the "rock" keyword.
+        /// </summary>
+        private static double CalculateGenreScore(List<string> genres, HashSet<string> keywords)
         {
-            return (energy >= 0.5, valence >= 0.5) switch
+            double score = 0;
+            foreach (var genre in genres)
             {
-                (true, true) => "Happy & Energetic",
-                (true, false) => "Intense & Angry",
-                (false, true) => "Calm & Content",
-                (false, false) => "Sad & Melancholic"
-            };
+                // Exact match
+                if (keywords.Contains(genre))
+                {
+                    score += 1.0;
+                    continue;
+                }
+                // Partial match: "indie rock" contains "rock"
+                foreach (var keyword in keywords)
+                {
+                    if (genre.Contains(keyword, StringComparison.OrdinalIgnoreCase))
+                    {
+                        score += 0.7;
+                        break;
+                    }
+                }
+            }
+            return score;
         }
 
-        private static string GenerateMoodDescription(double energy, double valence, double dance, double tempo)
+        private static string DetermineMood(double energetic, double happy, double calm, double sad)
+        {
+            var scores = new (string Label, double Score)[]
+            {
+                ("Energetic & Intense", energetic),
+                ("Happy & Upbeat", happy),
+                ("Calm & Relaxed", calm),
+                ("Sad & Melancholic", sad)
+            };
+
+            var top = scores.OrderByDescending(s => s.Score).First();
+            var second = scores.OrderByDescending(s => s.Score).Skip(1).First();
+
+            // If the top two are close, blend them
+            if (top.Score - second.Score < 8)
+            {
+                return $"{top.Label.Split('&')[0].Trim()} & {second.Label.Split('&')[0].Trim()}";
+            }
+
+            return top.Label;
+        }
+
+        private static string GenerateMoodDescription(double energetic, double happy, double calm, double sad, double popularity)
         {
             var parts = new List<string>();
 
-            if (energy > 0.7) parts.Add("Your listening is highly energetic");
-            else if (energy < 0.4) parts.Add("You tend to listen to chill, low-energy music");
-            else parts.Add("Your music has moderate energy");
+            var dominant = new[] {
+                (Name: "energetic", Score: energetic),
+                (Name: "happy and upbeat", Score: happy),
+                (Name: "calm and relaxed", Score: calm),
+                (Name: "sad or melancholic", Score: sad)
+            }.OrderByDescending(s => s.Score).First();
 
-            if (valence > 0.6) parts.Add("with a generally positive and upbeat vibe");
-            else if (valence < 0.4) parts.Add("with a more somber or melancholic tone");
-            else parts.Add("with a balanced emotional tone");
+            parts.Add($"Your listening leans most heavily toward {dominant.Name} genres");
 
-            if (dance > 0.7) parts.Add("that's very danceable");
-            if (tempo > 140) parts.Add($"and a fast average tempo of {tempo:F0} BPM");
-            else if (tempo < 90) parts.Add($"and a slow average tempo of {tempo:F0} BPM");
+            if (energetic > 35) parts.Add("with a strong preference for high-energy sounds");
+            else if (calm > 35) parts.Add("with a clear taste for mellow, laid-back vibes");
 
-            return string.Join(" ", parts) + ".";
+            if (popularity > 70) parts.Add("and you tend to favor popular, mainstream tracks");
+            else if (popularity < 40) parts.Add("and you gravitate toward lesser-known, niche music");
+            else parts.Add("with a healthy mix of mainstream and underground picks");
+
+            return string.Join(", ", parts) + ".";
         }
     }
 }
