@@ -22,8 +22,8 @@ namespace SpotifyAPI.Models
     public class SpotifyImage
     {
         public string Url { get; set; } = "";
-        public int Width { get; set; }
-        public int Height { get; set; }
+        public int? Width { get; set; }
+        public int? Height { get; set; }
     }
 
     // --- Top Tracks ---
@@ -80,9 +80,16 @@ namespace SpotifyAPI.Models
         public string Id { get; set; } = "";
         public string Name { get; set; } = "";
         public string? Description { get; set; }
+        public SpotifyPlaylistOwner? Owner { get; set; }
         public SpotifyPlaylistTracks? Tracks { get; set; }
         public List<SpotifyImage>? Images { get; set; }
-        public bool Public { get; set; }
+        public bool? Public { get; set; }
+    }
+
+    public class SpotifyPlaylistOwner
+    {
+        public string Id { get; set; } = "";
+        public string DisplayName { get; set; } = "";
     }
 
     public class SpotifyPlaylistTracks

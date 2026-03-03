@@ -15,6 +15,7 @@ namespace SpotifyAPI.Services
         // For this project, we store in memory (single user).
         private string _accessToken = "";
         private string _refreshToken = "";
+        private string _userId = "";
         private DateTime _tokenExpiry = DateTime.MinValue;
 
         private readonly JsonSerializerOptions _jsonOptions = new()
@@ -156,7 +157,10 @@ namespace SpotifyAPI.Services
             if (!response.IsSuccessStatusCode) return null;
 
             var json = await response.Content.ReadAsStringAsync();
-            return JsonSerializer.Deserialize<SpotifyUser>(json, _jsonOptions);
+            var user = JsonSerializer.Deserialize<SpotifyUser>(json, _jsonOptions);
+            if (user != null && !string.IsNullOrEmpty(user.Id))
+                _userId = user.Id;
+            return user;
         }
 
         public async Task<List<TrackSummary>> GetTopTracksAsync(string timeRange = "medium_term", int limit = 20)
@@ -208,6 +212,10 @@ namespace SpotifyAPI.Services
 
         public async Task<List<PlaylistSummary>> GetPlaylistsAsync(string? sortBy = null)
         {
+            // Ensure we have the user ID for filtering
+            if (string.IsNullOrEmpty(_userId))
+                await GetCurrentUserAsync();
+
             var client = await GetAuthenticatedClientAsync();
             var response = await client.GetAsync("https://api.spotify.com/v1/me/playlists?limit=50");
             if (!response.IsSuccessStatusCode) return new();
@@ -216,12 +224,16 @@ namespace SpotifyAPI.Services
             var data = JsonSerializer.Deserialize<SpotifyPlaylistsResponse>(json, _jsonOptions);
             if (data == null) return new();
 
-            var summaries = data.Items.Select(p => new PlaylistSummary
+            var summaries = data.Items
+                .Where(p => !string.IsNullOrEmpty(_userId)
+                          && p.Owner != null
+                          && p.Owner.Id == _userId)
+                .Select(p => new PlaylistSummary
             {
                 Name = p.Name ?? "",
                 Description = p.Description ?? "",
                 TrackCount = p.Tracks?.Total ?? 0,
-                IsPublic = p.Public,
+                IsPublic = p.Public ?? false,
                 ImageUrl = p.Images?.FirstOrDefault()?.Url ?? ""
             }).ToList();
 
@@ -314,18 +326,47 @@ namespace SpotifyAPI.Services
                 AveragePopularity = Math.Round(avgPopularity, 1),
                 TracksAnalyzed = tracksData.Items.Count,
                 ArtistsAnalyzed = artistsData.Items.Count,
-                MoodScores = new List<MoodScore>
-                {
-                    new() { Category = "Energetic", Score = Math.Round(energeticScore, 1) },
-                    new() { Category = "Happy", Score = Math.Round(happyScore, 1) },
-                    new() { Category = "Calm", Score = Math.Round(calmScore, 1) },
-                    new() { Category = "Melancholic", Score = Math.Round(sadScore, 1) }
-                },
+                MoodScores = RoundToHundred(
+                    ("Energetic", energeticScore),
+                    ("Happy", happyScore),
+                    ("Calm", calmScore),
+                    ("Melancholic", sadScore)
+                ),
                 TopGenres = topGenres
             };
         }
 
         // ─── Helpers ───────────────────────────────────────────────────────────
+
+        /// <summary>
+        /// Rounds percentage scores so they always sum to exactly 100.
+        /// Uses the largest-remainder method: floor everything, then distribute
+        /// the leftover units to the values with the biggest fractional parts.
+        /// </summary>
+        private static List<MoodScore> RoundToHundred(params (string Label, double Value)[] items)
+        {
+            var floored = items.Select(i => (i.Label, Floor: Math.Floor(i.Value), Remainder: i.Value - Math.Floor(i.Value))).ToList();
+            double gap = 100 - floored.Sum(f => f.Floor);
+            int unitsToDistribute = (int)Math.Round(gap);
+
+            // Give +1 to the entries with the largest remainders
+            var sorted = floored
+                .Select((f, idx) => (f.Label, f.Floor, f.Remainder, Index: idx))
+                .OrderByDescending(f => f.Remainder)
+                .ToList();
+
+            var results = new double[items.Length];
+            for (int i = 0; i < sorted.Count; i++)
+            {
+                results[sorted[i].Index] = sorted[i].Floor + (i < unitsToDistribute ? 1 : 0);
+            }
+
+            return items.Select((item, i) => new MoodScore
+            {
+                Category = item.Label,
+                Score = results[i]
+            }).ToList();
+        }
 
         private static string FormatDuration(int ms)
         {
