@@ -1,0 +1,20 @@
+## .gitignore for SpotifyAPI
+
+# Build output
+bin/
+obj/
+
+# User secrets / sensitive config - DO NOT COMMIT THESE
+appsettings.Development.json
+appsettings.Local.json
+*.user
+
+# IDE files
+.vs/
+.vscode/
+*.suo
+*.user
+
+# OS files
+.DS_Store
+Thumbs.db
