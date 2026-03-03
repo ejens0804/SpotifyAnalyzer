@@ -39,4 +39,10 @@ app.UseCors("AllowAll");
 app.UseAuthorization();
 app.MapControllers();
 
-app.Run("http://localhost:5000");
+app.Run("http://localhost:5001");
+
+// ```
+
+// **Step 4 — Add to Spotify Dashboard:**
+// ```
+// https://localhost:5001/api/spotify/callback
