@@ -1,3 +1,5 @@
+// my-spotify-stats-e8bva9c5fme7fxew.northcentralus-01.azurewebsites.net
+
 using SpotifyAPI.Services;
 
 var builder = WebApplication.CreateBuilder(args);
