@@ -89,7 +89,7 @@ Spotify provides "audio features" for every track — numerical scores for:
 - **Danceability** (0–1): How suitable it is for dancing
 - **Tempo**: BPM of the track
 
-This API fetches your top 50 tracks, pulls their audio features, averages them, and assigns a mood label:
+This API fetches your top 50 tracks, pulls their audio features, averages them, and assigns a mood label: 
 
 | Energy | Valence | Mood |
 |--------|---------|------|
